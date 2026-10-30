@@ -29,9 +29,9 @@ footer{text-align:center;color:#827b91;font-size:11px;margin-top:22px}
 <body>
 <main>
 <header><div class="logo">P</div><div><div class="brand">PersonaLive AI</div><div class="tag">Your private appearance studio</div></div></header>
-<div class="pill">VERSION 1.1 · FACE-TRACKING TEST</div>
+<div class="pill">VERSION 1.2 · MULTI-REFERENCE PHOTO TEST</div>
 <h1>Meet your camera studio.</h1>
-<p>Choose a reference photo and preview your camera. This build adds an on-screen face-tracking test. It detects facial landmarks; it does not replace your face or send a modified camera feed into other calling apps.</p>
+<p>Add several reference photos of the same consenting person from different angles. This build previews and manages those photos locally while testing face tracking; it does not yet perform identity transformation or send a modified camera feed into calling apps.</p>
 <div class="grid">
 <section class="card">
 <h2>Live camera preview</h2>
@@ -46,14 +46,12 @@ footer{text-align:center;color:#827b91;font-size:11px;margin-top:22px}
 </section>
 <section class="card">
 <h2>Reference appearance</h2>
-<div class="refrow">
-<img class="thumb" id="thumb" alt="Reference photo preview" hidden>
-<div class="thumb" id="emptyThumb">＋</div>
-<div class="reftext"><strong id="photoName">No photo selected</strong><span>Choose a photo you own or have permission to use.</span></div>
-</div>
-<div class="actions"><label class="filebtn" for="photo">Upload photo</label><button class="secondary" id="removePhoto" disabled>Remove</button></div>
-<input id="photo" type="file" accept="image/*">
-<div class="status" id="photoStatus" role="status"></div>
+<p style="font-size:12px;margin-bottom:12px">Add multiple angles of the same person to give a future transformation system more visual reference. You can change or remove them at any time.</p>
+<div id="referenceGallery" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px"></div>
+<div class="actions"><label class="filebtn" for="photos">Add reference photos</label><button class="secondary" id="clearPhotos" disabled>Remove all</button></div>
+<input id="photos" type="file" accept="image/*" multiple>
+<div class="status" id="photoStatus" role="status">No reference photos selected.</div>
+<div class="notice" style="margin-top:10px">Tip: for better angle coverage, choose clear front, left-side, right-side and slightly up/down views, with similar lighting. These are stored only in this browser tab; they are not uploaded to a server.</div>
 </section>
 </div>
 <section class="card">
@@ -62,7 +60,7 @@ footer{text-align:center;color:#827b91;font-size:11px;margin-top:22px}
 <div class="switchrow"><div><strong>Voice mode</strong><small>Voice effects are not included in this build.</small></div><select disabled style="background:#252132;color:#aaa3ba;border:1px solid #393348;border-radius:10px;padding:9px"><option>Original voice</option><option>Alternative voice</option></select></div>
 <div class="notice">Privacy note: your selected photo is previewed locally in this page. This prototype does not upload it to a server. Use only images and voices with the person's permission, and don't mislead callers about who they are speaking with.</div>
 </section>
-<footer>PersonaLive AI · Face-tracking prototype · Not connected to WhatsApp, Instagram or Telegram</footer>
+<footer>PersonaLive AI · Multi-reference photo and face-tracking prototype · Not connected to WhatsApp, Instagram or Telegram</footer>
 </main>
 <script type="module">
 const video=document.getElementById('video'), placeholder=document.getElementById('placeholder');
@@ -113,14 +111,41 @@ stop.addEventListener('click',()=>{
   start.disabled=false;stop.disabled=true;cameraStatus.textContent='Camera is off.';trackingStatus.textContent='Face tracking is waiting for the camera.';
 });
 overlaySwitch.addEventListener('click',()=>{overlayOn=!overlayOn;overlaySwitch.classList.toggle('on',overlayOn);overlaySwitch.setAttribute('aria-checked',String(overlayOn));if(!overlayOn)ctx.clearRect(0,0,canvas.width,canvas.height);});
-document.getElementById('photo').addEventListener('change',e=>{
-  const f=e.target.files?.[0];if(!f)return;if(photoUrl)URL.revokeObjectURL(photoUrl);photoUrl=URL.createObjectURL(f);
-  const thumb=document.getElementById('thumb');thumb.src=photoUrl;thumb.hidden=false;document.getElementById('emptyThumb').style.display='none';
-  document.getElementById('photoName').textContent=f.name;document.getElementById('photoStatus').textContent='Reference photo loaded locally. It is not being used to replace your live face yet.';document.getElementById('removePhoto').disabled=false;
+const photoInput=document.getElementById('photos');
+const gallery=document.getElementById('referenceGallery');
+const clearPhotos=document.getElementById('clearPhotos');
+let referencePhotos=[];
+function renderReferences(){
+  gallery.innerHTML='';
+  referencePhotos.forEach((item,index)=>{
+    const tile=document.createElement('div');
+    tile.style.cssText='position:relative;min-width:0;background:#252132;border:1px solid #393348;border-radius:12px;padding:6px';
+    const img=document.createElement('img');
+    img.src=item.url;img.alt='Reference angle '+(index+1);
+    img.style.cssText='width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:8px;display:block';
+    const label=document.createElement('div');
+    label.textContent='Photo '+(index+1);
+    label.style.cssText='font-size:11px;color:#d8cce5;margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+    const remove=document.createElement('button');
+    remove.type='button';remove.textContent='×';remove.setAttribute('aria-label','Remove photo '+(index+1));
+    remove.style.cssText='position:absolute;right:9px;top:9px;padding:3px 8px;border-radius:20px;background:#100e18;color:white;border:1px solid #aaa3ba';
+    remove.addEventListener('click',()=>{URL.revokeObjectURL(item.url);referencePhotos.splice(index,1);renderReferences();});
+    tile.append(img,label,remove);gallery.append(tile);
+  });
+  clearPhotos.disabled=referencePhotos.length===0;
+  document.getElementById('photoStatus').textContent=referencePhotos.length
+    ? referencePhotos.length+' reference photo(s) selected locally. Face replacement is not active yet.'
+    : 'No reference photos selected.';
+}
+photoInput.addEventListener('change',e=>{
+  const files=Array.from(e.target.files||[]).filter(f=>f.type.startsWith('image/'));
+  files.forEach(f=>referencePhotos.push({file:f,url:URL.createObjectURL(f)}));
+  photoInput.value='';
+  renderReferences();
 });
-document.getElementById('removePhoto').addEventListener('click',()=>{
-  if(photoUrl)URL.revokeObjectURL(photoUrl);photoUrl=null;document.getElementById('photo').value='';document.getElementById('thumb').hidden=true;document.getElementById('emptyThumb').style.display='grid';
-  document.getElementById('photoName').textContent='No photo selected';document.getElementById('photoStatus').textContent='';document.getElementById('removePhoto').disabled=true;
+clearPhotos.addEventListener('click',()=>{
+  referencePhotos.forEach(item=>URL.revokeObjectURL(item.url));
+  referencePhotos=[];renderReferences();
 });
 </script>
 </body></html>
