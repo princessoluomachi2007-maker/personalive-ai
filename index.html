@@ -29,9 +29,9 @@ footer{text-align:center;color:#827b91;font-size:11px;margin-top:22px}
 <body>
 <main>
 <header><div class="logo">P</div><div><div class="brand">PersonaLive AI</div><div class="tag">Your private appearance studio</div></div></header>
-<div class="pill">VERSION 1.4 · EXPRESSION TRACKING TEST</div>
+<div class="pill">VERSION 1.5 · COMBINED FACE TRACKING TEST</div>
 <h1>Meet your camera studio.</h1>
-<p>Build an organised reference set and test how facial expressions are tracked. This build can display basic expression signals; it does not perform identity transformation or send a modified camera feed into calling apps.</p>
+<p>Build an organised reference set and test facial expressions plus approximate head pose together. This build tracks facial signals; it does not perform identity transformation or send a modified camera feed into calling apps.</p>
 <div class="grid">
 <section class="card">
 <h2>Live camera preview</h2>
@@ -43,7 +43,8 @@ footer{text-align:center;color:#827b91;font-size:11px;margin-top:22px}
 <div class="actions"><button id="start">Start camera</button><button class="secondary" id="stop" disabled>Stop camera</button></div>
 <div class="status" id="cameraStatus" role="status">Camera is off.</div>
 <div class="status" id="trackingStatus" role="status">Face tracking is waiting for the camera.</div>
-<div class="notice" style="margin-top:10px"><strong>Expression tracking test</strong><div id="expressionStatus" style="margin-top:7px;line-height:1.7">Expressions will appear here when the camera is running.</div></div>
+<div class="notice" style="margin-top:10px"><strong>Combined face tracking</strong><div id="expressionStatus" style="margin-top:7px;line-height:1.7">Expressions and head pose will appear here when the camera is running.</div></div>
+<div class="notice" style="margin-top:10px"><strong>Head-pose test</strong><div id="poseStatus" style="margin-top:7px;line-height:1.7">Turn your head gently after starting the camera.</div></div>
 </section>
 <section class="card">
 <h2>Reference appearance</h2>
@@ -58,11 +59,11 @@ footer{text-align:center;color:#827b91;font-size:11px;margin-top:22px}
 </div>
 <section class="card">
 <h2>Studio controls</h2>
-<div class="switchrow"><div><strong>Face tracking overlay</strong><small>Face landmarks and basic expression signals are being tested; realistic face replacement is not active.</small></div><div class="switch" id="transformSwitch" aria-label="Face tracking overlay toggle" role="switch" aria-checked="false"></div></div>
+<div class="switchrow"><div><strong>Face tracking overlay</strong><small>Face landmarks, expression signals and approximate head-pose estimates are being tested; realistic face replacement is not active.</small></div><div class="switch" id="transformSwitch" aria-label="Face tracking overlay toggle" role="switch" aria-checked="false"></div></div>
 <div class="switchrow"><div><strong>Voice mode</strong><small>Voice effects are not included in this build.</small></div><select disabled style="background:#252132;color:#aaa3ba;border:1px solid #393348;border-radius:10px;padding:9px"><option>Original voice</option><option>Alternative voice</option></select></div>
 <div class="notice">Privacy note: your selected photo is previewed locally in this page. This prototype does not upload it to a server. Use only images and voices with the person's permission, and don't mislead callers about who they are speaking with.</div>
 </section>
-<footer>PersonaLive AI · Reference-angle organiser and facial-expression tracking prototype · Not connected to WhatsApp, Instagram or Telegram</footer>
+<footer>PersonaLive AI · Reference-angle organiser and combined facial-expression/head-pose tracking prototype · Not connected to WhatsApp, Instagram or Telegram</footer>
 </main>
 <script type="module">
 const video=document.getElementById('video'), placeholder=document.getElementById('placeholder');
@@ -71,6 +72,7 @@ const cameraStatus=document.getElementById('cameraStatus'), trackingStatus=docum
 const canvas=document.getElementById('trackingCanvas'), ctx=canvas.getContext('2d');
 let stream=null, photoUrl=null, landmarker=null, raf=0, lastDetect=0, overlayOn=true;
 const expressionStatus=document.getElementById("expressionStatus");
+const poseStatus=document.getElementById('poseStatus');
 const overlaySwitch=document.getElementById('transformSwitch');
 const faceOval=[10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109,10];
 async function loadTracker(){
@@ -103,7 +105,22 @@ function drawResults(now){
         const jaw=score('jawOpen');
         const brow=(score('browInnerUp')+score('browOuterUpLeft')+score('browOuterUpRight'))/3;
         expressionStatus.innerHTML='Eye blink: <b>'+ (blink>.55?'Blink detected': 'Eyes open / slight blink') +'</b><br>Smile signal: <b>'+Math.round(smile*100)+'%</b><br>Mouth open signal: <b>'+Math.round(jaw*100)+'%</b><br>Eyebrow raise signal: <b>'+Math.round(brow*100)+'%</b><br><small>Experimental tracking signals, not emotion recognition.</small>';
-      }else{trackingStatus.textContent='No face detected. Face the camera and improve the lighting.';expressionStatus.textContent='Waiting for a face…';}
+        // Approximate head orientation from stable facial landmarks. Values are directional cues, not calibrated angles.
+        const point=i=>pts[i];
+        const eyeL=point(33), eyeR=point(263), nose=point(1), forehead=point(10), chin=point(152), mouth=point(13);
+        const eyeMid={x:(eyeL.x+eyeR.x)/2,y:(eyeL.y+eyeR.y)/2};
+        const eyeWidth=Math.max(.001,Math.hypot(eyeR.x-eyeL.x,eyeR.y-eyeL.y));
+        const yaw=(nose.x-eyeMid.x)/eyeWidth;
+        const eyeToChin=Math.max(.001,chin.y-eyeMid.y);
+        const pitch=(nose.y-eyeMid.y)/eyeToChin;
+        const roll=Math.atan2(eyeR.y-eyeL.y,eyeR.x-eyeL.x)*180/Math.PI;
+        let yawText=Math.abs(yaw)<.075?'Facing forward':(yaw>0?'Turned slightly left':'Turned slightly right');
+        // Camera preview is mirrored for a natural selfie view; reverse horizontal cue for user-facing wording.
+        if(Math.abs(yaw)>=.075) yawText=(yaw>0?'Turned slightly right':'Turned slightly left');
+        const pitchText=pitch<.43?'Looking up / chin raised':(pitch>.57?'Looking down / chin lowered':'Looking level');
+        const rollText=Math.abs(roll)<7?'Head level':(roll>0?'Tilted sideways':'Tilted the other way');
+        poseStatus.innerHTML='Left/right: <b>'+yawText+'</b><br>Up/down: <b>'+pitchText+'</b><br>Side tilt: <b>'+rollText+'</b><br><small>Approximate directional estimates; small movements and camera angle can affect results.</small>';
+      }else{trackingStatus.textContent='No face detected. Face the camera and improve the lighting.';expressionStatus.textContent='Waiting for a face…';poseStatus.textContent='Waiting for a face…';}
     }catch(e){trackingStatus.textContent='Tracking paused: '+e.message;}
   }
   raf=requestAnimationFrame(drawResults);
@@ -115,13 +132,14 @@ start.addEventListener('click',async()=>{
     video.srcObject=stream;await video.play();video.style.display='block';placeholder.style.display='none';canvas.style.display='block';
     start.disabled=true;stop.disabled=false;cameraStatus.textContent='Camera is running on this page only.';
     await loadTracker();trackingStatus.textContent='Tracker ready. Looking for your face…';cancelAnimationFrame(raf);raf=requestAnimationFrame(drawResults);
-  }catch(e){cameraStatus.textContent=e.name==='NotAllowedError'?'Camera permission was denied. Allow camera access in Chrome settings and try again.':'Could not start camera or load the tracker: '+e.message;trackingStatus.textContent='Face tracking could not start. Check your internet connection and try again.';}
+  }catch(e){cameraStatus.textContent=e.name==='NotAllowedError'?'Camera permission was denied. Allow camera access in Chrome settings and try again.':'Could not start camera or load the tracker: '+e.message;trackingStatus.textContent='Face tracking could not start. Check your internet connection and try again.';if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}video.srcObject=null;video.style.display='none';canvas.style.display='none';placeholder.style.display='grid';start.disabled=false;stop.disabled=true;}
 });
 stop.addEventListener('click',()=>{
   if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}cancelAnimationFrame(raf);
   video.srcObject=null;video.style.display='none';canvas.style.display='none';ctx.clearRect(0,0,canvas.width,canvas.height);placeholder.style.display='grid';
-  start.disabled=false;stop.disabled=true;cameraStatus.textContent='Camera is off.';trackingStatus.textContent='Face tracking is waiting for the camera.';
+  start.disabled=false;stop.disabled=true;cameraStatus.textContent='Camera is off.';trackingStatus.textContent='Face tracking is waiting for the camera.';expressionStatus.textContent='Expressions and head pose will appear here when the camera is running.';poseStatus.textContent='Turn your head gently after starting the camera.';
 });
+overlaySwitch.classList.add('on');overlaySwitch.setAttribute('aria-checked','true');
 overlaySwitch.addEventListener('click',()=>{overlayOn=!overlayOn;overlaySwitch.classList.toggle('on',overlayOn);overlaySwitch.setAttribute('aria-checked',String(overlayOn));if(!overlayOn)ctx.clearRect(0,0,canvas.width,canvas.height);});
 const photoInput=document.getElementById('photos');
 const gallery=document.getElementById('referenceGallery');
